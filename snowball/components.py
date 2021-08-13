@@ -1,33 +1,44 @@
+from abc import ABCMeta, abstractmethod
 import numpy as np
 import pandas as pd
 import math
 from tqdm.auto import tqdm
-from .optimizer import risk_budgeting
-from .report import calc_stats
+from .report import calc_stats, log_report, perf_report
 
 class Universe(object):
-    def __init__(self, name=None, pricing=None, calendar=None):
-        self._name = name
-        self._pricing = pricing
-        self._calendar = calendar
+    def __init__(self, name, prices=None):
+        self.name = name
+        if prices is not None:
+            # if prices.isnull().any().any():
+            #     raise ValueError('Price data has null.')
+
+            prices.index = pd.to_datetime(prices.index, utc=True)
+            pr = prices.stack().rename('price')
+            dr = prices.pct_change().stack().rename('return')
+            pricing = pd.concat([pr, dr], axis=1).sort_index()
+            self._pricing = pricing
+            self._calendar = self._build_calendar(pricing)
+        else:
+            self._pricing = None
+            self._calendar = None
+        self.blind_after = None
 
     def __repr__(self):
-        return f'<UNIVERSE> {self._name}'
-
-    @property
-    def name(self):
-        return self._name
+        return f'<UNIVERSE> {self.name}'
 
     @property
     def pricing(self):
         if self._pricing is None:
-            return pd.DataFrame(None)
+            return None
         else:
-            return self._pricing
+            return self._pricing.loc[:self.blind_after]
 
     @property
     def calendar(self):
-        return self._calendar
+        if self._calendar is None:
+            return None
+        else:
+            return self._calendar.loc[:self.blind_after]
 
     def _build_calendar(self, pricing):
         bd = pricing.index.get_level_values(0).unique().sort_values()
@@ -35,14 +46,14 @@ class Universe(object):
         bsd = bd.to_frame(name='TD')
         bsd['ND'] = bsd.shift(-1) # next business day
         bsd.loc[end, 'ND'] = bsd.loc[end, 'TD'] + pd.Timedelta(days=1) # fill NaN with next day
-        bsd['BSD'] = True
+        bsd['EOD'] = True
         bsd['EOM'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month else False, axis=1)
         bsd['EOQ'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month in (3, 6, 9, 12) else False, axis=1)
         bsd['EOH'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month in (6, 12) else False, axis=1)
         bsd['EOY'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month == 12 else False, axis=1)
         cal = pd.date_range(start, end).to_frame(name='CD') # build calendar 
         cal = pd.concat([cal, bsd], axis=1).fillna(False)   # fill holidays with False
-        cal = cal[['BSD', 'EOM', 'EOQ', 'EOH', 'EOY']]
+        cal = cal[['EOD', 'EOM', 'EOQ', 'EOH', 'EOY']]
         return cal
 
     def add_pricing(self, data):
@@ -52,10 +63,13 @@ class Universe(object):
         self._pricing = pd.concat([pr, dr], axis=1)
         self._calendar = self._build_calendar(self._pricing)
 
+    def set_blind_after(self, date):
+        self.blind_after = date
+
 
 class Scheduler(object):
     def __init__(self, calendar, rule_or_list='EOM'):
-        self._business_days = calendar[calendar.BSD == 1]
+        self._business_days = calendar[calendar.EOD == 1]
 
         if isinstance(rule_or_list, list):
             self._rule = 'DIRECT'
@@ -93,7 +107,7 @@ class Fund(object):
     def __init__(self):
         self.is_initiated = False
         self._nav = 100
-        self._weights = pd.DataFrame(None, columns=['item', 'weight']).set_index('item')
+        self._weights = pd.Series(None, dtype=float).rename('weight')
 
     def __repr__(self):
         return f'NAV: {self.nav}\nWeights:\n{self.weights.to_string()}'
@@ -109,10 +123,10 @@ class Fund(object):
     def rebalance(self, weights):
         if weights is not None:
             self.is_initiated = True
-            new_portfolio = weights['weight']
-            old_portfolio = self._weights['weight']
-            _trades = new_portfolio.subtract(old_portfolio, fill_value=0).to_frame(name='trade')
-            self._weights = weights
+            new_portfolio = weights.rename('weight')
+            old_portfolio = self._weights
+            _trades = new_portfolio.subtract(old_portfolio, fill_value=0).rename('trade')
+            self._weights = new_portfolio
         else:
             _trades = None
         return _trades
@@ -120,92 +134,37 @@ class Fund(object):
     def update(self, date, pricing, logger):
         _pricing = pricing.xs(date)
         _portfolio_return = np.float64(0)
-        _item_returns = []
-        for item in self._weights.index:
+        _asset_returns = []
+        for asset in self._weights.index:
             # Price does not exist in the universe: cash out
             try:
-                _item_return = _pricing.loc[item, 'return']
+                _asset_return = _pricing.loc[asset, 'return']
             except KeyError:
-                logger.write('No price data', date, f'{item} : cash out')
-                self._weights.drop(item, inplace=True)
+                logger.write('No price data', date, f'{asset} : cash out')
+                self._weights.drop(asset, inplace=True)
                 continue
             # To check if there are abnormal data.
-            if math.isnan(_item_return):
-                logger.write('Daily return is NaN', date, f'{item} : changed to zero')
-                _item_return = 0
-            if abs(_item_return) > 0.30:
-                logger.write('Large price change', date, f'{item} : {_item_return:.2%}')
-            _item_returns.append([item, _item_return])
-            _portfolio_return += self._weights.loc[item, 'weight'] * _item_return
-        _item_returns = pd.DataFrame(_item_returns, columns=['item', 'return']).set_index('item')
+            if math.isnan(_asset_return):
+                logger.write('Daily return is NaN', date, f'{asset} : changed to zero')
+                _asset_return = 0
+            if abs(_asset_return) > 0.30:
+                logger.write('Large price change', date, f'{asset} : {_asset_return:.2%}')
+            _asset_returns.append([asset, _asset_return])
+            _portfolio_return += self._weights.loc[asset] * _asset_return
+        _asset_returns = pd.DataFrame(_asset_returns, columns=['asset', 'return']).set_index('asset')
         self._nav *= (1 + _portfolio_return)
-        self._weights = self._weights.mul((1 + _item_returns['return']), axis=0) / (1 + _portfolio_return)
+        self._weights = self._weights.mul((1 + _asset_returns['return']), axis=0) / (1 + _portfolio_return)
+        self._weights = self._weights.rename('weight')
         return _portfolio_return
 
 
-class Constructor(object):
-    def __init__(self, method, params):
-        self._method = method
-        self._params = params # TODO: params..?
-
-        # Validation
-        if self._method == 'mix':
-            total_weight = np.sum([val for _, val in self._params.items()])
-            if not math.isclose(total_weight, 1):  # to avoid floating point error
-                raise ValueError('Sum of the weight must be 1.')
-        elif self._method == 'risk_budgeting':
-            total_risk = np.sum([val for _, val in self._params.items()])
-            if not math.isclose(total_risk, 1):  # to avoid floating point error
-                raise ValueError('Sum of the risk budget must be 1.')
-
-    def calculate(self, date, universe, *args, **kwargs):
-        if self._method == 'mix':
-            weights = pd.DataFrame.from_dict(self._params, orient='index', columns=['weight']).rename_axis(index='item')
-        elif self._method == 'risk_budgeting':
-            returns_1y = universe.pricing['return'].unstack()[:date]
-            returns_1y = returns_1y[-252:]
-            returns = []
-            budget = []
-            for key, val in self._params.items():
-                returns.append(returns_1y[key])
-                budget.append(val)
-            covmat = pd.concat(returns, axis=1).cov()
-            weights = risk_budgeting(covmat.values, budget) 
-            weights = pd.DataFrame(weights, index=covmat.columns, columns=['weight']).rename_axis(index='item')
-        elif self._method == 'func':
-            weights = self._params(date, universe, *args, **kwargs)
-        else:
-            raise ValueError('Not supported method')
-        return weights
+class Rule(metaclass=ABCMeta):
+    @abstractmethod
+    def calculate(self, date, universe):
+        pass
 
 
-class BacktestResult(object):
-    def __init__(self):
-        self.returns = pd.DataFrame(None, columns=['date', 'return']).set_index('date')
-        self.weights = None
-        self.trades = None
-        self.stats = None
-
-    def add(self, date, returns, weights, trades):
-        def _to_multiindex_with_date(dt, df):
-            ddf = df.copy()
-            ddf['date'] = dt
-            old_index = df.index.name
-            new_index = ['date', old_index]
-            ddf.reset_index(inplace=True)
-            ddf.set_index(new_index, inplace=True)
-            return ddf
-        self.returns.loc[date] = returns
-        self.weights = pd.concat([self.weights, _to_multiindex_with_date(date, weights)])
-        if trades is not None:
-            self.trades = pd.concat([self.trades, _to_multiindex_with_date(date, trades)])
-
-    def finalize(self):
-        rtns = self.returns['return']
-        self.stats = calc_stats(rtns)
-
-
-class BacktestLogger(object):
+class BacktestLog(object):
     def __init__(self):
         self._log = []
 
@@ -216,76 +175,103 @@ class BacktestLogger(object):
         self._log = pd.DataFrame(self._log, columns=['event', 'date', 'message'])
 
 
-class Backtester(object):
-    def __init__(self, universe, scheduler, constructor):
-        self._universe = universe
-        self._scheduler = scheduler
-        self._constructor = constructor
-        self._backtest_result = BacktestResult()
-        self._backtest_logger = BacktestLogger()
+class Portfolio(object):
+    def __init__(self, name, universe, schedule, rule):
+        self.name = name
+        self.universe = universe
+        self.scheduler = Scheduler(universe._calendar, schedule)
+        self.rule = rule
+
+        self.returns = pd.Series(None, dtype=float).rename('return')
+        self.weights = None
+        self.trades = None
+        self.stats = None
+        self.backtest_log = BacktestLog()
 
     def __repr__(self):
-        desc = f'Backtester'
-        return desc
+        return self.name
 
-    @property
-    def universe(self):
-        return self._universe
+    def log(self, date, returns, weights, trades):
+        def _to_multiindex_with_date(dt, sr):
+            df = sr.to_frame().reset_index()
+            df.columns = ['asset'] + [sr.name]
+            df['date'] = dt
+            df.set_index(['date', 'asset'], inplace=True)
+            return df[sr.name]
+        self.returns.loc[date] = returns
+        self.weights = pd.concat([self.weights, _to_multiindex_with_date(date, weights)])
+        if trades is not None:
+            self.trades = pd.concat([self.trades, _to_multiindex_with_date(date, trades)])
 
-    @property
-    def scheduler(self):
-        return self._scheduler
+    def evaluate(self):
+        self.stats = calc_stats(self.returns)
+        return self.stats
 
-    @property
-    def constructor(self):
-        return self._constructor
+    def report(self, start='1900-01-01', end='2099-01-01', benchmark=None, relative=False, interactive=True):
+        '''
+        Report performance metrics and charts.
 
-    @property
-    def result(self):
-        return self._backtest_result
+        Parameters
+        ----------
+        start : string 'YYYY-MM-DD' or datetime
+        end : string 'YYYY-MM-DD' or datetime
+        benchamrk : pd.Series
+            daily index value or price, not daily return
+        relative : boolean
+            If True, excess returns will be analyzed.
+        '''
+        rtns = self.returns
+        wgts = self.weights
+        if benchmark is not None:
+            bm = benchmark.pct_change()
+            bm.index = pd.to_datetime(bm.index, utc=True)
+            bm = bm.reindex(rtns.index).fillna(0)
+            t0 = rtns.index[0]
+            if rtns.loc[t0] == 0:
+                bm.loc[t0] = 0 # To align with portfolio return
+            if relative:
+                rtns = rtns - bm
+        else:
+            bm = None
+        trds = self.trades
 
-    @property
-    def log(self):
-        return self._backtest_logger._log
+        perf_report(rtns, trds, wgts, bm, interactive)
 
-    @universe.setter
-    def universe(self, universe):
-        self._universe = universe
+    def backtest(self, start='1900-01-01', end='2099-12-31', initial_weights=None, verbose=True):
+        self.universe.set_blind_after(None) # prevent look-ahead bias 방지
 
-    @scheduler.setter
-    def scheduler(self, scheduler):
-        self._scheduler = scheduler
-
-    @constructor.setter
-    def constructor(self, constructor):
-        self._constructor = constructor
-
-    def run(self, start='1900-01-01', end='2099-12-31', initial_portfolio=None, verbose=True):
         fund = Fund()
-        fund.rebalance(initial_portfolio)
+        fund.rebalance(initial_weights)
 
         bar_format='{percentage:3.0f}% {bar} ({desc}) {n_fmt}/{total_fmt} | \
                     Elapsed {elapsed} | Remaining {remaining} | {rate_inv_fmt}'
-        business_days_iterator = tqdm(self._scheduler.business_days(start, end),
+        business_days_iterator = tqdm(self.scheduler.business_days(start, end),
                                       bar_format=bar_format,
                                       desc='DATE', disable=(not verbose))
         for td in business_days_iterator:
             business_days_iterator.desc = td.strftime('%Y-%m-%d')
 
-            # Calculate portfolio's daily return and adjust weights based on items' daily return.
-            fund_return = fund.update(td, self._universe.pricing, self._backtest_logger)
+            # Calculate portfolio's daily return and adjust weights based on assets' daily return.
+            # should use universe._pricing!!
+            fund_return = fund.update(td, self.universe._pricing, self.backtest_log)
 
             # Rebalance
-            if self._scheduler.is_rebalance_date(td):
-                weights = self.constructor.calculate(date=td, universe=self._universe)
+            if self.scheduler.is_rebalance_date(td):
+                self.universe.set_blind_after(td) # prevent look-ahead bias 방지
+                weights = self.rule.calculate(td, self.universe)
                 trades = fund.rebalance(weights)
-                self._backtest_logger.write('Rebalancing', td, f'{len(trades)} trades')
+                self.backtest_log.write('Rebalancing', td, f'{len(trades)} trades')
             else:
                 trades = None
 
             if fund.is_initiated:
-                self._backtest_result.add(td, fund_return, fund.weights, trades)
+                self.log(td, fund_return, fund.weights, trades)
+
         business_days_iterator.close()
 
-        self._backtest_result.finalize()
-        self._backtest_logger.finalize()
+        self.evaluate()
+        self.backtest_log.finalize()
+
+        if verbose:
+            log_report(self.backtest_log._log)
+

@@ -2,13 +2,12 @@
 
 import numpy as np
 import pandas as pd
-from plotly.offline import init_notebook_mode, iplot
+from plotly.offline import iplot
 import plotly.graph_objs as go
 import plotly.io as pio
-from IPython.display import display, Markdown, HTML
+from IPython.display import display, Markdown, HTML, Image
 
 pio.templates.default='none' # plotly style
-init_notebook_mode()
 
 def calc_stats(returns):
     '''
@@ -77,7 +76,7 @@ def log_report(log):
     display(HTML(report.to_html(index=False)))
     print('\n')
 
-def perf_report(returns, trades=None, weights=None, benchmark=None):
+def perf_report(returns, trades=None, weights=None, benchmark=None, interactive=True):
     '''
     Report the portfolio performance.
 
@@ -110,8 +109,15 @@ def perf_report(returns, trades=None, weights=None, benchmark=None):
                    .format({'Sharpe': '{:.2f}'})))
 
     # draw chart
-    iplot(chart_history(returns, trades, weights, benchmark))
-    iplot(chart_periodic(returns))
+    fig1 = chart_history(returns, trades, weights, benchmark)
+    fig2 = chart_periodic(returns)
+    if interactive:
+        iplot(fig1)
+        iplot(fig2)
+    else:
+        display(Image(fig1.to_image(format='png', engine='kaleido', width=850, height=800)))
+        display(Image(fig2.to_image(format='png', engine='kaleido', width=850, height=400)))
+
 
 def chart_history(returns, trades, weights, benchmark):
     nav = (1 + returns).cumprod() * 100
@@ -158,8 +164,8 @@ def chart_history(returns, trades, weights, benchmark):
         # Do not draw initial trades which are not turnover.
         first_rebal_dt = trades.index.get_level_values(0).unique()[1]
         trades = trades.loc[first_rebal_dt:]
-        buy = trades[trades>0].groupby('date').sum().reindex(returns.index)
-        sell = trades[trades<0].groupby('date').sum().reindex(returns.index)
+        buy = trades[trades>0].groupby('date').sum().reindex(returns.index).to_frame()
+        sell = trades[trades<0].groupby('date').sum().reindex(returns.index).to_frame()
         data.append(go.Bar(x=buy.index, 
                            y=(buy * 100).round(2), 
                            name='Buy', 
@@ -279,7 +285,7 @@ def chart_periodic(returns):
     for year_l_index, year_l in enumerate(hm.values.tolist()):
         text_temp = []
         for month_index, value in enumerate(year_l):
-            yyyymm = str(hm.index.tolist()[year_l_index]) + '/' + str(hm.columns.tolist()[month_index]).rjust(2, '0')
+            yyyymm = str(hm.index.tolist()[year_l_index]) + ' / ' + str(hm.columns.tolist()[month_index]).rjust(2, '0')
             if value * 0 == 0:
                 text_temp.append(str(yyyymm + ' , ' + str(round(value * 100, 1)) + '%'))
             else:
@@ -314,7 +320,7 @@ def chart_periodic(returns):
                        margin=go.layout.Margin(t=25, l=120),
                        xaxis=dict(title='Annual return', domain=[0.00, 0.4]),
                        xaxis2=dict(title='Monthly return', domain=[0.45, 1.0]),
-                       yaxis=dict(title='Year', autorange='reversed'),
+                       yaxis=dict(title='Year', autorange='reversed', tickformat='d'),
                        hovermode='closest',
                        autosize=True,  # 사이즈 자동
                        showlegend=False,

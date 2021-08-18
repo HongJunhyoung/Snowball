@@ -106,7 +106,7 @@ def perf_report(returns, trades=None, weights=None, benchmark=None, interactive=
     display((stats.T
              .style.format('{:+.2%}', na_rep='N/A')
                    .set_properties(**{'width': '70px'}) 
-                   .format({'Sharpe': '{:.2f}'})))
+                   .format('{:.2f}', subset=['Sharpe'])))
 
     # draw chart
     fig1 = chart_history(returns, trades, weights, benchmark)
@@ -152,6 +152,7 @@ def chart_history(returns, trades, weights, benchmark):
                        showlegend=False, 
                        marker_color='rgb(169,169,169)'))
     if weights is not None:
+        weights = weights.loc[trades.index.get_level_values(0).tolist(), :] # show only rebalanced weights
         df = weights.unstack()
         for col in df.columns:
             data.append(go.Bar(x=df.index, 

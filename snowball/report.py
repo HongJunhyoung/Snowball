@@ -263,7 +263,7 @@ def chart_periodic(returns):
                           marker=dict(color='#7EC0EE'),
                           orientation='h',
                           hoverinfo='text',
-                          text=[f'{i:.2%}' for i in yr],
+                          hovertext=[f'{y:n}   {v:+.2%}' for y, v in yr.reset_index().values],
                           xaxis='x'
                           )
     trace_mean = go.Scatter(x=[yr.mean() * 100] * len(yr.index),
@@ -271,7 +271,7 @@ def chart_periodic(returns):
                             name='Average',
                             line=dict(dash='dot'),
                             hoverinfo='text',
-                            text=[f'{yr.mean():.2%}'] * len(yr.index),
+                            hovertext=[f'{yr.mean():+.2%}'] * len(yr.index),
                             xaxis='x'
                             )
 
@@ -286,11 +286,8 @@ def chart_periodic(returns):
     for year_l_index, year_l in enumerate(hm.values.tolist()):
         text_temp = []
         for month_index, value in enumerate(year_l):
-            yyyymm = str(hm.index.tolist()[year_l_index]) + ' / ' + str(hm.columns.tolist()[month_index]).rjust(2, '0')
-            if value * 0 == 0:
-                text_temp.append(str(yyyymm + ' , ' + str(round(value * 100, 1)) + '%'))
-            else:
-                text_temp.append(str(yyyymm + ' , ' + str(round(value * 100, 1))))
+            yyyymm = str(hm.index.tolist()[year_l_index]) + '-' + str(hm.columns.tolist()[month_index]).rjust(2, '0')
+            text_temp.append(f'{yyyymm}   {value:+.2%}')
         text.append(text_temp)
     colorscale = [
         [0.0, 'rgb(49,54,149)'],
@@ -311,7 +308,7 @@ def chart_periodic(returns):
                                zmin=-3*sigma,
                                zmax=3*sigma,
                                hoverinfo='text',
-                               text=text,
+                               hovertext=text,
                                colorscale=colorscale,
                                showscale=True,
                                xaxis='x2',

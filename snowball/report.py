@@ -165,8 +165,8 @@ def chart_history(returns, trades, weights, benchmark):
         # Do not draw initial trades which are not turnover.
         first_rebal_dt = trades.index.get_level_values(0).unique()[1]
         trades = trades.loc[first_rebal_dt:]
-        buy = trades[trades>0].groupby('date').sum()
-        sell = trades[trades<0].groupby('date').sum()
+        buy = trades[trades>0].groupby('date').sum().astype(float)
+        sell = trades[trades<0].groupby('date').sum().astype(float)
         data.append(go.Bar(x=buy.index, 
                            y=(buy * 100).round(2), 
                            name='Buy', 

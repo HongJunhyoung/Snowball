@@ -9,12 +9,10 @@ class Universe(object):
     def __init__(self, name, prices=None):
         self.name = name
         if prices is not None:
-            # if prices.isnull().any().any():
-            #     raise ValueError('Price data has null.')
-
-            prices.index = pd.to_datetime(prices.index, utc=True)
-            pr = prices.stack().rename('price')
-            dr = prices.pct_change().stack().rename('return')
+            _prices = prices.copy() 
+            _prices.index = pd.to_datetime(_prices.index)
+            pr = _prices.stack().rename('price')
+            dr = _prices.pct_change().stack().rename('return')
             pricing = pd.concat([pr, dr], axis=1).sort_index()
             self._pricing = pricing
             self._calendar = self._build_calendar(pricing)
@@ -224,7 +222,7 @@ class Portfolio(object):
         wgts = self.weights
         if benchmark is not None:
             bm = benchmark.pct_change()
-            bm.index = pd.to_datetime(bm.index, utc=True)
+            bm.index = pd.to_datetime(bm.index)
             bm = bm.reindex(rtns.index).fillna(0)
             t0 = rtns.index[0]
             if rtns.loc[t0] == 0:

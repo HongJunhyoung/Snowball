@@ -205,7 +205,7 @@ class Portfolio(object):
         self.stats = calc_stats(self.returns)
         return self.stats
 
-    def report(self, start='1900-01-01', end='2099-01-01', benchmark=None, relative=False, interactive=True):
+    def report(self, start='1900-01-01', end='2099-01-01', benchmark=None, relative=False, charts='interactive'):
         '''
         Report performance metrics and charts.
 
@@ -233,7 +233,7 @@ class Portfolio(object):
             bm = None
         trds = self.trades
 
-        perf_report(rtns, trds, wgts, bm, interactive)
+        perf_report(rtns, trds, wgts, bm, charts)
 
     def backtest(self, start='1900-01-01', end='2099-12-31', initial_weights=None, verbose=True):
         self.universe.set_blind_after(None) # prevent look-ahead bias 방지

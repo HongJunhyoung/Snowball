@@ -38,6 +38,8 @@ def calc_stats(returns):
         t0 = last_day - pd.Timedelta(days=(365*n + 1)) # n year ago
         stats[f'{n}Y'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
 
+    # TODO : periodic return
+
     days_per_year = 252
     stats['CAGR'] = nav[-1] ** (days_per_year / len(returns)) - 1
     stats['Volatility'] = returns.std() * np.sqrt(252)  # default ddof = 1
@@ -76,7 +78,7 @@ def log_report(log):
     display(HTML(report.to_html(index=False)))
     print('\n')
 
-def perf_report(returns, trades=None, weights=None, benchmark=None, interactive=True):
+def perf_report(returns, trades=None, weights=None, benchmark=None, charts='interactive'):
     '''
     Report the portfolio performance.
 
@@ -101,22 +103,27 @@ def perf_report(returns, trades=None, weights=None, benchmark=None, interactive=
         bm_stats = pd.DataFrame.from_dict(bm_stats, orient='index', columns=['Benchmark'])
         stats = pd.concat([stats, bm_stats], axis=1)
 
-    display(Markdown('__[ Porfolio Performance ]__'))
+    if charts:
+        display(Markdown('__[ Porfolio Performance ]__'))
+
     display(Markdown(f"- _{start.strftime('%Y-%m-%d')} ~ {end.strftime('%Y-%m-%d')} ( {period} )_"))
     display((stats.T
              .style.format('{:+.2%}', na_rep='N/A')
                    .set_properties(**{'width': '70px'}) 
                    .format('{:.2f}', subset=['Sharpe'])))
 
-    # draw chart
-    fig1 = chart_history(returns, trades, weights, benchmark)
-    fig2 = chart_periodic(returns)
-    if interactive:
-        iplot(fig1)
-        iplot(fig2)
-    else:
-        display(Image(fig1.to_image(format='png', engine='kaleido', width=850, height=800)))
-        display(Image(fig2.to_image(format='png', engine='kaleido', width=850, height=400)))
+    if charts:
+        # draw charts
+        fig1 = chart_history(returns, trades, weights, benchmark)
+        fig2 = chart_periodic(returns)
+        if charts == 'interactive':
+            iplot(fig1)
+            iplot(fig2)
+        elif charts == 'static':
+            display(Image(fig1.to_image(format='png', engine='kaleido', width=850, height=800)))
+            display(Image(fig2.to_image(format='png', engine='kaleido', width=850, height=400)))
+        else:
+            raise ValueError('Charts should be interactive or static.')
 
 
 def chart_history(returns, trades, weights, benchmark):

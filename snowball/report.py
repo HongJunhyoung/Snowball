@@ -1,5 +1,3 @@
-#-*- coding: utf-8 -*-
-
 import numpy as np
 import pandas as pd
 from plotly.offline import iplot
@@ -9,7 +7,8 @@ from IPython.display import display, Markdown, HTML, Image
 
 pio.templates.default='none' # plotly style
 
-def calc_stats(returns):
+
+def calc_stats(returns, trades=None):
     '''
     Calculate stats of the portfolio.
 
@@ -21,12 +20,13 @@ def calc_stats(returns):
     Returns
     -------
     stats : dictionary
-        MTD, YTD, 1/5/10year return, CAGR, Vol, Sharpe, MDD
+        MTD, YTD, 1/5/10year return, Total Return, CAGR, Vol, Sharpe Ratio, MDD, etc.
     '''
     last_day = returns.index[-1]
     nav = (1 + returns).cumprod()
 
     stats = dict()
+
     t0 = last_day.replace(day=1) - pd.Timedelta(days=1) # end of previous month
     stats['MTD'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
 
@@ -35,21 +35,41 @@ def calc_stats(returns):
 
     years = [1, 5, 10]
     for n in years:
-        t0 = last_day - pd.Timedelta(days=(365*n + 1)) # n year ago
+        t0 = last_day - pd.Timedelta(days=(365*n + 1)) # n years ago
         stats[f'{n}Y'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
 
-    # TODO : periodic return
+    stats['Total Return'] = nav[-1] - 1
 
     days_per_year = 252
     stats['CAGR'] = nav[-1] ** (days_per_year / len(returns)) - 1
     stats['Volatility'] = returns.std() * np.sqrt(252)  # default ddof = 1
-    stats['Sharpe'] = returns.mean() * days_per_year / stats['Volatility']
+    stats['Sharpe Ratio'] = returns.mean() * days_per_year / stats['Volatility']
 
     running_max = np.maximum.accumulate(nav)
     drawdown = -((running_max - nav) / running_max)
     stats['MDD'] = np.min(drawdown)
+    stats['MDD Date'] = drawdown.idxmin().strftime('%Y-%m-%d')
+
+    # Monthly return metrics
+    if returns.iloc[0] == 0:
+        # Exclude initial rebalancing date
+        _returns = returns.iloc[1:]
+    else:
+        _returns = returns
+    mr = _returns.groupby([_returns.index.year, _returns.index.month]).apply(lambda x: (1+x).cumprod()[-1] - 1)
+    stats['Best Month'] = mr.max()
+    stats['Worst Month'] = mr.min()
+    stats['Positive Months'] = f'{len(mr[mr>0])} out of {len(mr)}'
+
+    # Annual turnover
+    if trades is not None:
+        turnover = trades.abs().groupby(trades.index.get_level_values(0)).sum()
+        turnover = turnover.iloc[1:]  # Exclude initial trades
+        average_monthly_turnover = turnover.sum() / len(mr) 
+        stats['Annual Turnover'] = average_monthly_turnover * 12
 
     return stats
+
 
 def log_report(log):
     '''
@@ -78,6 +98,7 @@ def log_report(log):
     display(HTML(report.to_html(index=False)))
     print('\n')
 
+
 def perf_report(returns, trades=None, weights=None, benchmark=None, charts='interactive'):
     '''
     Report the portfolio performance.
@@ -96,7 +117,7 @@ def perf_report(returns, trades=None, weights=None, benchmark=None, charts='inte
     mn = months % 12
     period = f'{yr} years' if yr >= 1 else ''
     period += f' {mn} months' if mn > 0 else ''
-    stats = calc_stats(returns)
+    stats = calc_stats(returns, trades)
     stats = pd.DataFrame.from_dict(stats, orient='index', columns=['Portfolio'])
     if benchmark is not None:
         bm_stats = calc_stats(benchmark)
@@ -108,9 +129,11 @@ def perf_report(returns, trades=None, weights=None, benchmark=None, charts='inte
 
     display(Markdown(f"- _{start.strftime('%Y-%m-%d')} ~ {end.strftime('%Y-%m-%d')} ( {period} )_"))
     display((stats.T
-             .style.format('{:+.2%}', na_rep='N/A')
-                   .set_properties(**{'width': '70px'}) 
-                   .format('{:.2f}', subset=['Sharpe'])))
+             .style.format('{:+.2%}', na_rep='N/A') # .set_properties(**{'width': '50px'}) 
+                   .format('{:.2f}', subset=['Sharpe Ratio'])
+                   .format('{:s}', subset=['MDD Date'])
+                   .format('{:s}', subset=['Positive Months'])
+           ))
 
     if charts:
         # draw charts
@@ -159,7 +182,7 @@ def chart_history(returns, trades, weights, benchmark):
                        showlegend=False, 
                        marker_color='rgb(169,169,169)'))
     if weights is not None:
-        weights = weights.loc[trades.index.get_level_values(0).tolist(), :] # show only rebalanced weights
+        weights = weights.loc[trades.index.get_level_values(0).tolist(), :] # Show only rebalanced weights
         df = weights.unstack()
         for col in df.columns:
             data.append(go.Bar(x=df.index, 

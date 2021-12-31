@@ -70,12 +70,12 @@ class Scheduler(object):
         self._business_days = calendar[calendar.EOD == 1]
 
         if isinstance(rule_or_list, list):
-            self._rule = 'DIRECT'
+            self._rule = 'LIST'
             self._rebalance_dates = pd.DatetimeIndex(rule_or_list)
         elif isinstance(rule_or_list, pd.DatetimeIndex):
-            self._rule = 'DIRECT'
+            self._rule = 'LIST'
             self._rebalance_dates = rule_or_list
-        elif isinstance(rule_or_list, str):  # periodic rebalancing
+        elif isinstance(rule_or_list, str):  # EOM, EOQ,..
             self._rule = rule_or_list
             stdday = self._rule[:3]
             offset = 0 if len(self._rule) == 3 else int(self._rule[3:])
@@ -162,8 +162,11 @@ class Rule(metaclass=ABCMeta):
         pass
 
 
-class BacktestLog(object):
+class BacktestLogger(object):
     def __init__(self):
+        self._log = []
+
+    def initialize(self):
         self._log = []
 
     def write(self, event, date, message):
@@ -184,12 +187,16 @@ class Portfolio(object):
         self.weights = None
         self.trades = None
         self.stats = None
-        self.backtest_log = BacktestLog()
+        self._logger = BacktestLogger()
 
     def __repr__(self):
         return self.name
 
-    def log(self, date, returns, weights, trades):
+    @property
+    def log(self):
+        return self._logger._log
+
+    def _record(self, date, returns, weights, trades):
         def _to_multiindex_with_date(dt, sr):
             df = sr.to_frame().reset_index()
             df.columns = ['asset'] + [sr.name]
@@ -201,8 +208,8 @@ class Portfolio(object):
         if trades is not None:
             self.trades = pd.concat([self.trades, _to_multiindex_with_date(date, trades)])
 
-    def evaluate(self):
-        self.stats = calc_stats(self.returns)
+    def _evaluate(self):
+        self.stats = calc_stats(self.returns, self.trades)
         return self.stats
 
     def report(self, start='1900-01-01', end='2099-01-01', benchmark=None, relative=False, charts='interactive'):
@@ -226,7 +233,7 @@ class Portfolio(object):
             bm = bm.reindex(rtns.index).fillna(0)
             t0 = rtns.index[0]
             if rtns.loc[t0] == 0:
-                bm.loc[t0] = 0 # To align with portfolio return
+                bm.loc[t0] = 0 # To be aligned with portfolio return
             if relative:
                 rtns = rtns - bm
         else:
@@ -236,7 +243,13 @@ class Portfolio(object):
         perf_report(rtns, trds, wgts, bm, charts)
 
     def backtest(self, start='1900-01-01', end='2099-12-31', initial_weights=None, verbose=True):
-        self.universe.set_blind_after(None) # prevent look-ahead bias 방지
+        # initialize for re-run
+        self.returns = pd.Series(None, dtype=float).rename('return')
+        self.weights = None
+        self.trades = None
+        self.stats = None
+        self.universe.set_blind_after(None) 
+        self._logger.initialize()
 
         fund = Fund()
         fund.rebalance(initial_weights)
@@ -249,27 +262,25 @@ class Portfolio(object):
         for td in business_days_iterator:
             business_days_iterator.desc = td.strftime('%Y-%m-%d')
 
-            # Calculate portfolio's daily return and adjust weights based on assets' daily return.
-            # should use universe._pricing!!
-            fund_return = fund.update(td, self.universe._pricing, self.backtest_log)
+            fund_return = fund.update(td, self.universe._pricing, self._logger)
 
             # Rebalance
             if self.scheduler.is_rebalance_date(td):
                 self.universe.set_blind_after(td) # prevent look-ahead bias 방지
                 weights = self.rule.calculate(td, self.universe)
                 trades = fund.rebalance(weights)
-                self.backtest_log.write('Rebalancing', td, f'{len(trades)} trades')
+                self._logger.write('Rebalancing', td, f'{len(trades)} trades')
             else:
                 trades = None
 
             if fund.is_initiated:
-                self.log(td, fund_return, fund.weights, trades)
+                self._record(td, fund_return, fund.weights, trades)
 
         business_days_iterator.close()
 
-        self.evaluate()
-        self.backtest_log.finalize()
+        self._evaluate()
+        self._logger.finalize()
 
         if verbose:
-            log_report(self.backtest_log._log)
+            log_report(self._logger._log)
 

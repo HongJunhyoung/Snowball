@@ -13,7 +13,7 @@ setup(
     cmdclass=versioneer.get_cmdclass(),
     author='Hong Junhyoung',
     author_email='bellus77@gmail.com',
-    desription='Powertool for Investment',
+    desription='Investment strategy backtesting tool',
     long_description=readme(),
     long_description_content_type='text/markdown',
     license='MIT',

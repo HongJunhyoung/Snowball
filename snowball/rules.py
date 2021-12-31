@@ -14,7 +14,7 @@ def risk_budgeting(covmat, budget):
         sgm = var ** 0.5
         mrc = 1 / sgm * (cov @ w)
         rc = w * mrc
-        rr = rc / sgm # relative risk contribution
+        rr = rc / sgm # Relative risk contribution
         return np.sum(np.square(rr - rb))
 
     covmat[covmat < 0] = 0  # Negative corelation is adjusted to zero.

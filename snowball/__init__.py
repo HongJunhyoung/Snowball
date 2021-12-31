@@ -9,10 +9,10 @@ from .components import (
 )
 
 from .rules import (
-    Pipeline,
     EqualWeight,
-    ConstantWeight,
     RiskParity,
+    ConstantWeight,
+    Pipeline,
     TopNbyMomentum,
     MinimumVariance,
 )

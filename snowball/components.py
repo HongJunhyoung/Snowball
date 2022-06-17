@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+from sqlite3 import Timestamp
 import numpy as np
 import pandas as pd
 import math
@@ -211,6 +212,14 @@ class Portfolio(object):
     def _evaluate(self):
         self.stats = calc_stats(self.returns, self.trades)
         return self.stats
+
+    def update(self, item, target=None, value=None):
+        if item == 'rebalance_date':
+            self.scheduler._rebalance_dates = self.scheduler._rebalance_dates.map(
+                lambda d: pd.Timestamp(value) if d == pd.Timestamp(target) else d
+            )
+        else:
+            raise ValueError('Not defined')
 
     def report(self, start='1900-01-01', end='2099-01-01', benchmark=None, relative=False, charts='interactive'):
         '''

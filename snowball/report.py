@@ -67,6 +67,8 @@ def calc_stats(returns, trades=None):
         turnover = turnover.iloc[1:]  # Exclude initial trades
         average_monthly_turnover = turnover.sum() / len(mr) 
         stats['Annual Turnover'] = average_monthly_turnover * 12
+    else:
+        stats['Annual Turnover'] = np.NaN
 
     return stats
 
@@ -99,13 +101,14 @@ def log_report(log):
     print('\n')
 
 
-def perf_report(returns, trades=None, weights=None, benchmark=None, charts='interactive'):
+def perf_report(returns, gross_returns=None, trades=None, weights=None, benchmark=None, charts='interactive'):
     '''
     Report the portfolio performance.
 
     Parameters
     ----------
     returns : pd.Series
+    gross_returns : pd.Series
     trades : pd.Series
     weights : pd.Series
     benchmark : pd.Series
@@ -133,11 +136,12 @@ def perf_report(returns, trades=None, weights=None, benchmark=None, charts='inte
                    .format('{:.2f}', subset=['Sharpe Ratio'])
                    .format('{:s}', subset=['MDD Date'])
                    .format('{:s}', subset=['Positive Months'])
+                   .format('{:.2%}', subset=['Volatility', 'Annual Turnover'], na_rep='N/A')
            ))
 
     if charts:
         # draw charts
-        fig1 = chart_history(returns, trades, weights, benchmark)
+        fig1 = chart_history(returns, gross_returns, trades, weights, benchmark)
         fig2 = chart_periodic(returns)
         if charts == 'interactive':
             iplot(fig1)
@@ -149,8 +153,10 @@ def perf_report(returns, trades=None, weights=None, benchmark=None, charts='inte
             raise ValueError('Charts should be interactive or static.')
 
 
-def chart_history(returns, trades, weights, benchmark):
+def chart_history(returns, gross_returns, trades, weights, benchmark):
     nav = (1 + returns).cumprod() * 100
+    if gross_returns is not None:
+        gross_nav = (1 + gross_returns).cumprod() * 100
     running_max = np.maximum.accumulate(nav)
     drawdown = -100 * ((running_max - nav) / running_max)
  
@@ -160,6 +166,7 @@ def chart_history(returns, trades, weights, benchmark):
                            name='Portfolio', 
                            opacity=0.8, 
                            yaxis='y'))
+
     if benchmark is not None:
         bm = ((1 + benchmark).cumprod() * 100)
         data.append(go.Scatter(x=benchmark.index, 
@@ -211,6 +218,13 @@ def chart_history(returns, trades, weights, benchmark):
                            yaxis='y5', 
                            showlegend=False, 
                            marker_color='rgb(69,117,180)'))
+
+    if gross_returns is not None:
+        data.append(go.Scatter(x=gross_returns.index,
+                               y=gross_nav.round(2),
+                               name='Before cost',
+                               opacity=0.3, line_color='gray',
+                               yaxis='y'))
 
     yaxis_lin = dict(title='NAV (Linear scale)', autorange=True, domain=[0.50, 1])
     yaxis_log = dict(title='NAV (Log scale)', autorange=True, domain=[0.50, 1], type='log')

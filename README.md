@@ -9,31 +9,34 @@ pip install snowball
 ```
 &nbsp;
 ## 실행 예시
-*아래 예제를 실행하기 전에 [yfinance 패키지](https://github.com/ranaroussi/yfinance)를 우선 설치해 주세요.*  
-*또 다른 예제들은 sample 디렉토리안의 노트북을 참고하시기 바랍니다.*
+*아래 예제를 실행하기 전에 [FianceDataReader 패키지](https://github.com/FinanceData/FinanceDataReader)를 우선 설치해 주세요.*  
+*또 다른 예제들은 docs 디렉토리안의 sample 노트북을 참고하시기 바랍니다.*
 &nbsp;
-#### 주식/채권 60/40
-- 2013년부터 매월말 한국 주식 ETF와 한국 국채3년 ETF를 6:4로 리밸런싱
+#### 한국 주식 채권 60/40
+- 2013년부터 매월말 리밸런싱: 한국 주식 ETF 60%, 한국 국채 ETF 40%
+- 거래 비용(수수료 및 슬리피지) 0.2% 가정
 ```py
-import yfinance as yf
 import snowball as sb
+import FinanceDataReader as fdr
 
-data = yf.download('069500.KS 114820.KS', period='MAX')['Adj Close']
+etfs = ['069500', '114820']
+data = pd.concat([fdr.DataReader(etf)['Close'].rename(etf) for etf in etfs], axis=1)
 
-portfolio = sb.run_backtest(prices=data, 
-                            schedule='EOM', 
-                            rule={'069500.KS': 0.6, '114820.KS': 0.4},
-                            start='2012-12-01')
-portfolio.report()
+bt = sb.run_backtest(prices=data, 
+                     schedule='EOM', 
+                     rule={'069500': 0.6, '114820': 0.4},
+                     cost=0.002,
+                     start='2012-12-01')
+bt.report()
 ```
 ![report_sample](./img/sample_report.png)
 &nbsp;
 ## 사용 방법
 *결과 리포트내 챠트가 plotly로 구현되어 있으므로 jupyter notebook에서 실행하는 것을 권장합니다.*
 &nbsp;
-### 0. 자산 가격 데이터 준비
+### 1. 자산 가격 데이터 준비
 - 투자할 자산(주식, ETF, Index, Commodity, etc.)의 일일 가격 데이터를 준비합니다.
-- 데이터 형태는 pandas DataFrame이어야 합니다.
+- 데이터 타입은 Pandas DataFrame이어야 합니다.
 ```py
 print(price_data)
 ```
@@ -47,7 +50,7 @@ print(price_data)
 |2020-12-02|139.8906|200.32|2316.53|
 |2020-12-03|138.7654|200.19|2315.77|
 &nbsp;
-### 1. 백테스팅
+### 2. 백테스팅
 - run_backtest() 함수를 이용하여 간단하게 포트폴리오의 성과를 시뮬레이션할 수 있습니다.
 - 리밸런싱 시점은 월말, 분기말, 년말, 사용자 정의 일자를 지원합니다.
 - 리밸런싱 방법은 동일 비중, 리스크 패리티, 정적 배분, 사용자 정의 규칙을 지원합니다.
@@ -55,24 +58,24 @@ print(price_data)
 import snowball as sb
 
 # 동일 비중 / 월말 리밸런싱
-portfolio = sb.run_backtest(prices=price_data, 
-                            schedule='EOM', 
-                            rule='EqualWeight',
-                            start='2000-12-31')
+bt = sb.run_backtest(prices=price_data, 
+                     schedule='EOM', 
+                     rule='EqualWeight',
+                     start='2000-12-31')
 ```
 ```py
 # 리스크 패리티 / 분기초(분기말 1영업일후) 리밸런싱 
-portfolio = sb.run_backtest(prices=price_data, 
-                            schedule='EOQ+1', 
-                            rule='RiskParity',
-                            start='2000-12-31')
+bt = sb.run_backtest(prices=price_data, 
+                     schedule='EOQ+1', 
+                     rule='RiskParity',
+                     start='2000-12-31')
 ```
 ```py
 # 정적 배분 / 매년말 5영업일전 리밸런싱
-portfolio = sb.run_backtest(prices=price_data, 
-                            schedule='EOY-5', 
-                            rule={'ETF_A': 0.6, 'ETF_B': 0.4},
-                            start='2000-12-31')
+bt = sb.run_backtest(prices=price_data, 
+                     schedule='EOY-5', 
+                     rule={'ETF_A': 0.6, 'ETF_B': 0.4},
+                     start='2000-12-31')
 ```
 ```py
 # 사용자 정의 규칙 / 지정일자
@@ -89,21 +92,21 @@ class MyRule(sb.Rule):
 
 my_rule = MyRule() 
 my_schedule = ['2001-06-30', '2005-06-30']
-portfolio = sb.run_backtest(prices=price_data, 
-                            schedule=my_schedule,
-                            rule=my_rule,
-                            start='2000-12-31')
+bt = sb.run_backtest(prices=price_data, 
+                     schedule=my_schedule,
+                     rule=my_rule,
+                     start='2000-12-31')
 ```
 &nbsp;
-### 2. 성과 분석
+### 3. 성과 분석
 - run_backtest()가 반환한 오브젝트의 report() 함수를 이용하여 결과를 확인합니다.
-- 챠트는 plotly로 구현하여습니다. jupyter lab에서 챠트 표시가 정상적으로 되지 않는 경우 [extension](https://www.npmjs.com/package/@jupyterlab/plotly-extension)을 설치하여 주십시오).
-- plotly 챠트 때문에 노트북 렌더링이 느려지는 경우에는 charts='static' 또는 charts=None 옵션을 사용하시기 바랍니다.
+- jupyter lab에서 챠트 표시가 정상적으로 되지 않는 경우 [plotly extension](https://www.npmjs.com/package/@jupyterlab/plotly-extension)을 설치하여 주십시오.
+- 챠트 때문에 노트북 렌더링이 느려지는 경우에는 charts='static' 또는 charts=None 옵션을 사용하시기 바랍니다.
 ```py
-portfolio.report() # charts='interactive'
+bt.report()
 ```
 
-- 또는 오브젝트 내의 결과 데이터를 직접 처리할 수 있습니다.
+- 또는 결과 데이터를 직접 처리하여 직접 분석하실 수 있습니다.
 ```py
-print(portfolio.log, portfolio.stats, portfolio.returns, portfolio.weights, portfolio.trades) 
+print(bt.log, bt.stats, bt.returns, bt.weights, bt.trades) 
 ```

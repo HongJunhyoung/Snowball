@@ -178,13 +178,15 @@ class BacktestLogger(object):
 
 
 class Portfolio(object):
-    def __init__(self, name, universe, schedule, rule):
+    def __init__(self, name, universe, schedule, rule, cost=0):
         self.name = name
         self.universe = universe
         self.scheduler = Scheduler(universe._calendar, schedule)
         self.rule = rule
+        self.cost = cost
 
-        self.returns = pd.Series(None, dtype=float).rename('return')
+        self.gross_returns = pd.Series(None, dtype=float).rename('return')
+        self.returns = None
         self.weights = None
         self.trades = None
         self.stats = None
@@ -204,10 +206,19 @@ class Portfolio(object):
             df['date'] = dt
             df.set_index(['date', 'asset'], inplace=True)
             return df[sr.name]
-        self.returns.loc[date] = returns
+        self.gross_returns.loc[date] = returns
         self.weights = pd.concat([self.weights, _to_multiindex_with_date(date, weights)])
         if trades is not None:
             self.trades = pd.concat([self.trades, _to_multiindex_with_date(date, trades)])
+
+    def _calc_net_returns(self):
+        # compute and subtract transaction cost from the portfolio returns
+        if self.trades is None:
+            self.returns = self.gross_returns.copy()
+        else:
+            turnover = self.trades.abs().groupby(self.trades.index.get_level_values(0)).sum().astype(float)
+            self.returns = self.gross_returns.sub(turnover * self.cost, fill_value=0)
+            self.stats = None # initialize for re-adjustment
 
     def _evaluate(self):
         self.stats = calc_stats(self.returns, self.trades)
@@ -235,6 +246,7 @@ class Portfolio(object):
             If True, excess returns will be analyzed.
         '''
         rtns = self.returns
+        g_rtns = self.gross_returns
         wgts = self.weights
         if benchmark is not None:
             bm = benchmark.pct_change()
@@ -249,7 +261,7 @@ class Portfolio(object):
             bm = None
         trds = self.trades
 
-        perf_report(rtns, trds, wgts, bm, charts)
+        perf_report(rtns, g_rtns, trds, wgts, bm, charts)
 
     def backtest(self, start='1900-01-01', end='2099-12-31', initial_weights=None, verbose=True):
         # initialize for re-run
@@ -287,6 +299,7 @@ class Portfolio(object):
 
         business_days_iterator.close()
 
+        self._calc_net_returns()
         self._evaluate()
         self._logger.finalize()
 

@@ -4,7 +4,7 @@ from .rules import EqualWeight, RiskParity, ConstantWeight
 from .report import log_report, perf_report
 
 
-def run_backtest(prices, schedule, rule, start='1900-01-01', end='2099-12-31', verbose=True):
+def run_backtest(prices, schedule, rule, cost=0, start='1900-01-01', end='2099-12-31', verbose=True):
     '''
     Run backtest.
 
@@ -37,6 +37,6 @@ def run_backtest(prices, schedule, rule, start='1900-01-01', end='2099-12-31', v
     else:
         raise ValueError('rule is not valid.')
 
-    portfolio = Portfolio('Portfolio', universe, schedule, rule)
+    portfolio = Portfolio('Portfolio', universe, schedule, rule, cost)
     portfolio.backtest(start=start, end=end, verbose=verbose)
     return portfolio

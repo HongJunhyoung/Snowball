@@ -73,9 +73,9 @@ def calc_stats(returns, trades=None):
     return stats
 
 
-def log_report(log):
+def report_log(log):
     '''
-    Report the backtest log.
+    Display the backtest log.
 
     Parameters
     ----------
@@ -101,7 +101,7 @@ def log_report(log):
     print('\n')
 
 
-def perf_report(returns, gross_returns=None, trades=None, weights=None, benchmark=None, charts='interactive'):
+def report_perf(returns, gross_returns=None, trades=None, weights=None, benchmark=None, charts='interactive'):
     '''
     Report the portfolio performance.
 
@@ -141,8 +141,8 @@ def perf_report(returns, gross_returns=None, trades=None, weights=None, benchmar
 
     if charts:
         # draw charts
-        fig1 = chart_history(returns, gross_returns, trades, weights, benchmark)
-        fig2 = chart_periodic(returns)
+        fig1 = make_history_chart(returns, gross_returns, trades, weights, benchmark)
+        fig2 = make_periodic_chart(returns)
         if charts == 'interactive':
             iplot(fig1)
             iplot(fig2)
@@ -153,7 +153,7 @@ def perf_report(returns, gross_returns=None, trades=None, weights=None, benchmar
             raise ValueError('Charts should be interactive or static.')
 
 
-def chart_history(returns, gross_returns, trades, weights, benchmark):
+def make_history_chart(returns, gross_returns, trades, weights, benchmark):
     nav = (1 + returns).cumprod() * 100
     if gross_returns is not None:
         gross_nav = (1 + gross_returns).cumprod() * 100
@@ -266,13 +266,13 @@ def chart_history(returns, gross_returns, trades, weights, benchmark):
             anchor='x'
         ),
         yaxis4=dict(
-            title='weight(%)',
+            title='weights(%)',
             autorange=True,
             domain=[0.12, 0.22],
             anchor='x'
         ),
         yaxis5=dict(
-            title='turnover(%)',
+            title='trades(%)',
             autorange=True,
             domain=[0.00, 0.10],
             anchor='x'
@@ -298,7 +298,7 @@ def chart_history(returns, gross_returns, trades, weights, benchmark):
     figure = go.Figure(data=data, layout=layout)
     return figure
 
-def chart_periodic(returns):
+def make_periodic_chart(returns):
     # Annual returns 
     yr = returns.groupby(returns.index.year).apply(lambda x: (1+x).cumprod()[-1] - 1)
     trace_annual = go.Bar(x=yr * 100,

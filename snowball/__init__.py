@@ -19,7 +19,7 @@ from .rules import (
 
 from .report import (
     calc_stats,
-    perf_report
+    report_perf,
 )
 
 from ._version import get_versions

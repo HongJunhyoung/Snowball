@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import math
 from tqdm.auto import tqdm
-from .report import calc_stats, log_report, perf_report
+from .report import calc_stats, report_log, report_perf
 
 class Universe(object):
     def __init__(self, name, prices=None):
@@ -261,7 +261,7 @@ class Portfolio(object):
             bm = None
         trds = self.trades
 
-        perf_report(rtns, g_rtns, trds, wgts, bm, charts)
+        report_perf(rtns, g_rtns, trds, wgts, bm, charts)
 
     def backtest(self, start='1900-01-01', end='2099-12-31', initial_weights=None, verbose=True):
         # initialize for re-run
@@ -305,5 +305,5 @@ class Portfolio(object):
         self._logger.finalize()
 
         if verbose:
-            log_report(self._logger._log)
+            report_log(self._logger._log)
 

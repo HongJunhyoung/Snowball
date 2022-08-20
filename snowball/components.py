@@ -159,7 +159,7 @@ class Fund(object):
 
 class Rule(metaclass=ABCMeta):
     @abstractmethod
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         pass
 
 
@@ -288,9 +288,10 @@ class Portfolio(object):
             # Rebalance
             if self.scheduler.is_rebalance_date(td):
                 self.universe.set_blind_after(td) # prevent look-ahead bias 방지
-                weights = self.rule.calculate(td, self.universe)
+                weights = self.rule.calculate(td, self.universe, fund)
                 trades = fund.rebalance(weights)
-                self._logger.write('Rebalancing', td, f'{len(trades)} trades')
+                if trades is not None:
+                    self._logger.write('Rebalancing', td, f'{len(trades)} trades')
             else:
                 trades = None
 

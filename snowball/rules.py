@@ -37,11 +37,11 @@ class Pipeline(Rule):
     def __init__(self, rules):
         self.rules = rules
 
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         assets = self.rules[0].assets
         for rule in self.rules:
             rule.set_assets(assets)
-            weights = rule.calculate(date, universe)
+            weights = rule.calculate(date, universe, fund)
             assets = weights.keys().tolist()
 
         return weights
@@ -53,7 +53,7 @@ class ConstantWeight(Rule):
 
         # assert sum(self.weights) == 1
 
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         return self.weights
 
 
@@ -63,7 +63,7 @@ class EqualWeight(Rule):
         weights = 1 / n_assets
         self.weights = pd.Series([weights] * n_assets, index=assets)
 
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         return self.weights
 
  
@@ -75,7 +75,7 @@ class RiskParity(Rule):
     def set_assets(self, assets):
         self.assets = assets
 
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         n_assets = len(self.assets)
         returns = universe.pricing['return'].unstack()[self.assets]
         returns = returns.loc[:date].iloc[-self.window:]
@@ -95,7 +95,7 @@ class TopNbyMomentum(Rule):
     def set_assets(self, assets):
         self.assets = assets
 
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         prices = universe.pricing['price'].unstack()[self.assets]
         momentums = prices.iloc[-1] / prices.iloc[-self.period] - 1
         selected = momentums.sort_values(ascending=False).iloc[:self.top_n].index
@@ -112,7 +112,7 @@ class MinimumVariance(Rule):
     def set_assets(self, assets):
         self.assets = assets
 
-    def calculate(self, date, universe):
+    def calculate(self, date, universe, fund):
         prices = universe.pricing['price'].unstack()[self.assets].iloc[-self.window:]
         mu = mean_historical_return(prices)
         S = CovarianceShrinkage(prices).ledoit_wolf()

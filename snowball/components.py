@@ -51,8 +51,8 @@ class Universe(object):
         bsd['EOH'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month in (6, 12) else False, axis=1)
         bsd['EOY'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month == 12 else False, axis=1)
         cal = pd.date_range(start, end).to_frame(name='CD') # build calendar 
-        cal = pd.concat([cal, bsd], axis=1).fillna(False)   # fill holidays with False
-        cal = cal[['EOD', 'EOM', 'EOQ', 'EOH', 'EOY']]
+        cal = pd.concat([cal, bsd], axis=1)
+        cal = cal[['EOD', 'EOM', 'EOQ', 'EOH', 'EOY']].astype('boolean').fillna(False)   # fill holidays with False
         return cal
 
     def add_pricing(self, data):

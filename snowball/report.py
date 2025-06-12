@@ -28,7 +28,7 @@ def calc_stats(returns, trades=None):
     stats = dict()
 
     t0 = last_day.replace(day=1) - pd.Timedelta(days=1) # end of previous month
-    stats['MTD'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
+    stats['MTD'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
     t0 = last_day.replace(month=1, day=1) - pd.Timedelta(days=1) # end of previous year
     stats['YTD'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
@@ -38,10 +38,10 @@ def calc_stats(returns, trades=None):
         t0 = last_day - pd.Timedelta(days=(365*n + 1)) # n years ago
         stats[f'{n}Y'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
 
-    stats['Total Return'] = nav[-1] - 1
+    stats['Total Return'] = nav.iloc[-1] - 1
 
     days_per_year = 252
-    stats['CAGR'] = nav[-1] ** (days_per_year / len(returns)) - 1
+    stats['CAGR'] = nav.iloc[-1] ** (days_per_year / len(returns)) - 1
     stats['Volatility'] = returns.std() * np.sqrt(252)  # default ddof = 1
     stats['Sharpe Ratio'] = returns.mean() * days_per_year / stats['Volatility']
 
@@ -56,7 +56,7 @@ def calc_stats(returns, trades=None):
         _returns = returns.iloc[1:]
     else:
         _returns = returns
-    mr = _returns.groupby([_returns.index.year, _returns.index.month]).apply(lambda x: (1+x).cumprod()[-1] - 1)
+    mr = _returns.groupby([_returns.index.year, _returns.index.month]).apply(lambda x: (1+x).cumprod().iloc[-1] - 1)
     stats['Best Month'] = mr.max()
     stats['Worst Month'] = mr.min()
     stats['Positive Months'] = f'{len(mr[mr>0])} out of {len(mr)}'
@@ -68,7 +68,7 @@ def calc_stats(returns, trades=None):
         average_monthly_turnover = turnover.sum() / len(mr) 
         stats['Annual Turnover'] = average_monthly_turnover * 12
     else:
-        stats['Annual Turnover'] = np.NaN
+        stats['Annual Turnover'] = np.nan
 
     return stats
 

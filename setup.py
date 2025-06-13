@@ -25,7 +25,7 @@ setup(
         'numpy>=1.21.0',
         'pandas>=1.3.5',
         'scipy>=1.7.3',
-        'PyPortfolioOpt>=1.5.1'
+        'PyPortfolioOpt>=1.5.1',
         'tqdm>=4.45.0',
         'plotly>=5.1.0',
         'kaleido>=0.2.1',

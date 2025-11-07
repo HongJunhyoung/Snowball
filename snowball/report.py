@@ -31,12 +31,12 @@ def calc_stats(returns, trades=None):
     stats['MTD'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
     t0 = last_day.replace(month=1, day=1) - pd.Timedelta(days=1) # end of previous year
-    stats['YTD'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
+    stats['YTD'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
     years = [1, 5, 10]
     for n in years:
         t0 = last_day - pd.Timedelta(days=(365*n + 1)) # n years ago
-        stats[f'{n}Y'] = nav[-1] / nav[:t0][-1] - 1 if not nav[:t0].empty else np.nan
+        stats[f'{n}Y'] = nav.iloc[-1] / nav.iloc[:t0][-1] - 1 if not nav.iloc[:t0].empty else np.nan
 
     stats['Total Return'] = nav.iloc[-1] - 1
 
@@ -300,7 +300,7 @@ def make_history_chart(returns, gross_returns, trades, weights, benchmark):
 
 def make_periodic_chart(returns):
     # Annual returns 
-    yr = returns.groupby(returns.index.year).apply(lambda x: (1+x).cumprod()[-1] - 1)
+    yr = returns.groupby(returns.index.year).apply(lambda x: (1+x).cumprod().iloc[-1] - 1)
     trace_annual = go.Bar(x=yr * 100,
                           y=yr.index,
                           name='Annual Return',
@@ -320,7 +320,7 @@ def make_periodic_chart(returns):
                             )
 
     # Monthly returns
-    mr = returns.groupby([returns.index.year, returns.index.month]).apply(lambda x: (1+x).cumprod()[-1] - 1)
+    mr = returns.groupby([returns.index.year, returns.index.month]).apply(lambda x: (1+x).cumprod().iloc[-1] - 1)
     hm = mr.unstack() # unstack months to columns
     x = hm.columns # month
     y = hm.index   # year

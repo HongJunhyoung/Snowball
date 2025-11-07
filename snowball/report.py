@@ -36,7 +36,7 @@ def calc_stats(returns, trades=None):
     years = [1, 5, 10]
     for n in years:
         t0 = last_day - pd.Timedelta(days=(365*n + 1)) # n years ago
-        stats[f'{n}Y'] = nav.iloc[-1] / nav.iloc[:t0][-1] - 1 if not nav.iloc[:t0].empty else np.nan
+        stats[f'{n}Y'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
     stats['Total Return'] = nav.iloc[-1] - 1
 

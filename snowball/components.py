@@ -102,6 +102,30 @@ class Scheduler(object):
             return False
 
 
+class DailyReturns(object):
+    """Daily asset returns unstacked into a (date x asset) array for fast lookups.
+
+    `has_price` marks whether the asset has a row in the pricing data on that date.
+    A missing row means the asset is not tradable (cash out); a row with a NaN return
+    is kept and later treated as a zero return.
+    """
+    def __init__(self, pricing):
+        returns = pricing['return'].unstack()
+        has_price = pd.Series(True, index=pricing.index).unstack(fill_value=False)
+        has_price = has_price.reindex(index=returns.index, columns=returns.columns, fill_value=False)
+        self._returns = returns.to_numpy(dtype=float)
+        self._has_price = has_price.to_numpy(dtype=bool)
+        self._dates = returns.index
+        self._col = {a: j for j, a in enumerate(returns.columns)}
+
+    def row(self, date):
+        i = self._dates.get_loc(date)
+        return self._returns[i], self._has_price[i]
+
+    def col(self, asset):
+        return self._col.get(asset)
+
+
 class Fund(object):
     def __init__(self):
         self.is_initiated = False
@@ -131,29 +155,39 @@ class Fund(object):
         return _trades
 
     def update(self, date, pricing, logger):
-        _pricing = pricing.xs(date)
+        """Apply the daily asset returns of `date` to the fund.
+
+        pricing : DailyReturns or pricing DataFrame (only the requested date is converted)
+        """
+        if not isinstance(pricing, DailyReturns):
+            pricing = DailyReturns(pricing.loc[[date]])
+        row_returns, row_has_price = pricing.row(date)
+        assets = self._weights.index
+        weights = self._weights.to_numpy(dtype=float)
+        kept, kept_returns = [], []
         _portfolio_return = np.float64(0)
-        _asset_returns = []
-        for asset in self._weights.index:
+        for k, asset in enumerate(assets):
+            j = pricing.col(asset)
             # Price does not exist in the universe: cash out
-            try:
-                _asset_return = _pricing.loc[asset, 'return']
-            except KeyError:
+            if j is None or not row_has_price[j]:
                 logger.write('No price data', date, f'{asset} : cash out')
-                self._weights.drop(asset, inplace=True)
                 continue
+            _asset_return = row_returns[j]
             # To check if there are abnormal data.
             if math.isnan(_asset_return):
                 logger.write('Daily return is NaN', date, f'{asset} : changed to zero')
-                _asset_return = 0
+                _asset_return = 0.0
             if abs(_asset_return) > 0.30:
                 logger.write('Large price change', date, f'{asset} : {_asset_return:.2%}')
-            _asset_returns.append([asset, _asset_return])
-            _portfolio_return += self._weights.loc[asset] * _asset_return
-        _asset_returns = pd.DataFrame(_asset_returns, columns=['asset', 'return']).set_index('asset')
+            kept.append(k)
+            kept_returns.append(_asset_return)
+            _portfolio_return += weights[k] * _asset_return
         self._nav *= (1 + _portfolio_return)
-        self._weights = self._weights.mul((1 + _asset_returns['return']), axis=0) / (1 + _portfolio_return)
-        self._weights = self._weights.rename('weight')
+        new_weights = weights[kept] * (1 + np.asarray(kept_returns, dtype=float)) / (1 + _portfolio_return)
+        index = assets[kept]
+        if index.name != 'asset':
+            index = index.rename(None)
+        self._weights = pd.Series(new_weights, index=index, name='weight')
         return _portfolio_return
 
 
@@ -191,6 +225,7 @@ class Portfolio(object):
         self.trades = None
         self.stats = None
         self._logger = BacktestLogger()
+        self._records = None
 
     def __repr__(self):
         return self.name
@@ -200,16 +235,41 @@ class Portfolio(object):
         return self._logger._log
 
     def _record(self, date, returns, weights, trades):
-        def _to_multiindex_with_date(dt, sr):
-            df = sr.to_frame().reset_index()
-            df.columns = ['asset'] + [sr.name]
-            df['date'] = dt
-            df.set_index(['date', 'asset'], inplace=True)
-            return df[sr.name]
-        self.gross_returns.loc[date] = returns
-        self.weights = pd.concat([self.weights, _to_multiindex_with_date(date, weights)])
+        # Collected in lists and assembled once in _finalize_records(); building pandas objects
+        # every day makes the backtest quadratic in the number of days.
+        rec = self._records
+        rec['dates'].append(date)
+        rec['returns'].append(returns)
+        rec['weights'].append((date, weights.index, weights.to_numpy(copy=True)))
         if trades is not None:
-            self.trades = pd.concat([self.trades, _to_multiindex_with_date(date, trades)])
+            rec['trades'].append((date, trades.index, trades.to_numpy(copy=True)))
+
+    @staticmethod
+    def _stack_records(chunks, name):
+        """[(date, assets, values), ...] -> Series indexed by (date, asset)."""
+        if not chunks:
+            return None
+        lengths = [len(assets) for _, assets, _ in chunks]
+        dates = pd.DatetimeIndex([d for d, _, _ in chunks]).repeat(lengths)
+        assets = np.concatenate([np.asarray(a, dtype=object) for _, a, _ in chunks])
+        values = np.concatenate([v for _, _, v in chunks])
+        index = pd.MultiIndex.from_arrays([dates, assets], names=['date', 'asset'])
+        return pd.Series(values, index=index, name=name)
+
+    def _finalize_records(self):
+        rec = self._records
+        new = pd.Series(rec['returns'], index=pd.DatetimeIndex(rec['dates']), dtype=float, name='return')
+        old = self.gross_returns
+        if len(old) == 0:
+            self.gross_returns = new
+        else:  # re-run: overwrite overlapping dates, append the rest
+            updated = old.copy()
+            common = new.index.intersection(old.index)
+            updated.loc[common] = new.loc[common]
+            self.gross_returns = pd.concat([updated, new[~new.index.isin(old.index)]]).rename('return')
+        self.weights = self._stack_records(rec['weights'], 'weight')
+        self.trades = self._stack_records(rec['trades'], 'trade')
+        self._records = None
 
     def _calc_net_returns(self):
         # compute and subtract transaction cost from the portfolio returns
@@ -271,6 +331,8 @@ class Portfolio(object):
         self.stats = None
         self.universe.set_blind_after(None) 
         self._logger.initialize()
+        self._records = {'dates': [], 'returns': [], 'weights': [], 'trades': []}
+        daily_returns = DailyReturns(self.universe._pricing)
 
         fund = Fund()
         fund.rebalance(initial_weights)
@@ -283,7 +345,7 @@ class Portfolio(object):
         for td in business_days_iterator:
             business_days_iterator.desc = td.strftime('%Y-%m-%d')
 
-            fund_return = fund.update(td, self.universe._pricing, self._logger)
+            fund_return = fund.update(td, daily_returns, self._logger)
 
             # Rebalance
             if self.scheduler.is_rebalance_date(td):
@@ -300,10 +362,10 @@ class Portfolio(object):
 
         business_days_iterator.close()
 
+        self._finalize_records()
         self._calc_net_returns()
         self._evaluate()
         self._logger.finalize()
 
         if verbose:
             report_log(self._logger._log)
-

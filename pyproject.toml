@@ -40,6 +40,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "error",
+    # plotly 5.1 (oldest supported) uses deprecated stdlib APIs internally
+    "ignore::DeprecationWarning:plotly.*",
+]
 
 [tool.ruff]
 line-length = 100
@@ -53,15 +58,16 @@ quote-style = "single"
 
 [tool.tox]
 requires = ["tox>=4.21", "tox-uv>=1"]
-env_list = ["lint", "py310-pandas1", "py313-pandas2"]
+env_list = ["lint", "py310-pandas1", "py313-pandas2", "py313-pandas3"]
 
 [tool.tox.env_run_base]
 package = "wheel"
 wheel_build_env = ".pkg"
 set_env = { UV_NO_BUILD = "1" }
-deps = ["pytest", "plotly==5.1.0", "tqdm==4.45.0"]
+deps = ["pytest", "jinja2"]
 commands = [["pytest", "tests", { replace = "posargs", extend = true }]]
 
+# pandas1: oldest supported versions; pandas2/pandas3: latest of each major with latest deps
 [tool.tox.env.py310-pandas1]
 base_python = ["python3.10"]
 deps = [
@@ -69,18 +75,25 @@ deps = [
     "numpy==1.21.3",
     "pandas==1.3.5",
     "scipy==1.7.3",
+    "plotly==5.1.0",
+    "tqdm==4.45.0",
 ]
 
 [tool.tox.env.py313-pandas2]
 base_python = ["python3.13"]
 deps = [
     { replace = "ref", of = ["tool", "tox", "env_run_base", "deps"], extend = true },
-    "numpy==2.3.0",
-    "pandas==2.3.0",
-    "scipy==1.15.0",
+    "pandas>=2,<3",
 ]
 
 [tool.tox.env.lint]
 skip_install = true
 deps = ["ruff"]
 commands = [["ruff", "check", "src", "tests"], ["ruff", "format", "--check", "src", "tests"]]
+
+[tool.tox.env.py313-pandas3]
+base_python = ["python3.13"]
+deps = [
+    { replace = "ref", of = ["tool", "tox", "env_run_base", "deps"], extend = true },
+    "pandas>=3,<4",
+]

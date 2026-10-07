@@ -14,6 +14,7 @@ def risk_budgeting(covmat, budget):
         rr = rc / sgm  # Relative risk contribution
         return np.sum(np.square(rr - rb))
 
+    covmat = np.array(covmat, dtype=float)  # writable copy (pandas 3 returns read-only)
     covmat[covmat < 0] = 0  # Negative corelation is adjusted to zero.
 
     cnt = covmat.shape[0]

@@ -214,3 +214,80 @@ def test_rules_ignore_prices_after_date(rule):
     actual = rule.calculate(date, universe, None)
 
     pd.testing.assert_series_equal(actual, expected)
+
+
+def test_universe_add_pricing(sample_prices):
+    universe = sb.Universe('U', sample_prices.iloc[:100])
+    universe.add_pricing(sb.Universe('N', sample_prices.iloc[100:])._pricing)
+
+    full = sb.Universe('F', sample_prices)
+    expected = full._pricing.copy()
+    expected['return'] = expected['return'].fillna(0)
+    expected.loc[sample_prices.index[100], 'return'] = 0.0  # first day of the added data
+    pd.testing.assert_frame_equal(universe._pricing, expected)
+    pd.testing.assert_frame_equal(universe._calendar, full._calendar)
+
+
+@pytest.mark.parametrize('charts', [None, 'interactive'])
+def test_report(sample_prices, charts):
+    bt = sb.run_backtest(
+        prices=sample_prices,
+        schedule='EOM',
+        rule={'069500': 0.6, '114820': 0.4},
+        cost=0.002,
+        verbose=False,
+    )
+    bt.report(charts=charts, benchmark=sample_prices['069500'])
+    bt.report(charts=charts, benchmark=sample_prices['069500'], relative=True)
+
+
+def test_backtest_rerun_merges_returns(sample_prices):
+    universe = sb.Universe('U', sample_prices)
+    assert universe.calendar.index[0] == sample_prices.index[0]
+    portfolio = sb.Portfolio('P', universe, 'EOM', sb.EqualWeight(list(sample_prices.columns)))
+    portfolio.backtest(start='2024-01-01', end='2024-06-30', verbose=False)
+    first = portfolio.gross_returns.copy()
+    portfolio.backtest(start='2024-04-01', end='2024-12-31', verbose=False)
+
+    merged = portfolio.gross_returns
+    assert merged.index.is_unique
+    assert merged.index[0] == first.index[0]
+    assert merged.index[-1] == pd.Timestamp('2024-12-30')
+    # Dates before the second run keep the first run's returns
+    before = first.index < pd.Timestamp('2024-04-01')
+    pd.testing.assert_series_equal(merged.loc[first.index[before]], first[before])
+
+
+def test_schedule_index_and_update(sample_prices):
+    dates = pd.DatetimeIndex(['2024-03-29', '2024-06-28', '2024-09-30'])
+    portfolio = sb.Portfolio(
+        'P', sb.Universe('U', sample_prices), dates, sb.ConstantWeight({'069500': 1.0})
+    )
+    portfolio.update('rebalance_date', target='2024-06-28', value='2024-07-01')
+    assert list(portfolio.scheduler.rebalance_dates) == list(
+        pd.DatetimeIndex(['2024-03-29', '2024-07-01', '2024-09-30'])
+    )
+    portfolio.backtest(verbose=False)
+    assert portfolio.trades.index.get_level_values(0).unique().tolist() == list(
+        pd.DatetimeIndex(['2024-03-29', '2024-07-01', '2024-09-30'])
+    )
+
+
+def test_fund_logs_large_price_change_and_repr():
+    date = pd.Timestamp('2020-01-02')
+    index = pd.MultiIndex.from_tuples([(date, 'A')], names=['date', 'asset'])
+    pricing = pd.DataFrame({'return': [0.5]}, index=index)
+    fund = Fund()
+    fund.rebalance(pd.Series({'A': 1.0}))
+    logger = BacktestLogger()
+
+    fund.update(date, pricing=pricing, logger=logger)
+
+    assert logger._log == [['Large price change', date, 'A : 50.00%']]
+    assert repr(fund).startswith('NAV: 150')
+
+
+def test_report_aligns_benchmark_without_cost(sample_prices):
+    bt = sb.run_backtest(sample_prices, 'EOM', {'069500': 1.0}, verbose=False)
+    assert bt.returns.iloc[0] == 0
+    bt.report(charts=None, benchmark=sample_prices['114820'], relative=True)

@@ -14,8 +14,11 @@ class Universe(object):
         if prices is not None:
             _prices = prices.copy()
             _prices.index = pd.to_datetime(_prices.index)
-            pr = _prices.stack().rename('price')
-            dr = _prices.pct_change().stack().rename('return')
+            # stack().dropna() and the explicit forward fill keep the pandas < 3 results:
+            # missing prices are dropped, and returns are computed on forward-filled prices.
+            pr = _prices.stack().dropna().rename('price')
+            filled = _prices.ffill()
+            dr = (filled / filled.shift(1) - 1).stack().dropna().rename('return')
             pricing = pd.concat([pr, dr], axis=1).sort_index()
             self._pricing = pricing
             self._calendar = self._build_calendar(pricing)
@@ -46,7 +49,8 @@ class Universe(object):
         start, end = bd[0], bd[-1]
         bsd = bd.to_frame(name='TD')
         bsd['ND'] = bsd.shift(-1)  # next business day
-        bsd.loc[end, 'ND'] = bsd.loc[end, 'TD'] + pd.Timedelta(days=1)  # fill NaN with next day
+        # fill NaN with next day
+        bsd.loc[end, 'ND'] = bsd.loc[end, 'TD'] + pd.Timedelta(1, unit='D')
         bsd['EOD'] = True
         bsd['EOM'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month else False, axis=1)
         bsd['EOQ'] = bsd.apply(
@@ -73,8 +77,8 @@ class Universe(object):
         return cal
 
     def add_pricing(self, data):
-        pricing = self.pricing.append(data).sort_index()
-        pr = pricing['price'].unstack().fillna(method='ffill').stack().rename('price')
+        pricing = pd.concat([self.pricing, data]).sort_index()
+        pr = pricing['price'].unstack().ffill().stack().dropna().rename('price')
         dr = pricing['return'].unstack().fillna(0).stack().rename('return')
         self._pricing = pd.concat([pr, dr], axis=1)
         self._calendar = self._build_calendar(self._pricing)
@@ -184,7 +188,9 @@ class Fund(object):
         pricing : DailyReturns or pricing DataFrame (only the requested date is converted)
         """
         if not isinstance(pricing, DailyReturns):
-            pricing = DailyReturns(pricing.loc[[date]])
+            dates = pricing.index.levels[0]
+            # Resolve string dates to the index's Timestamp; pandas 1.x cannot .loc[[str]]
+            pricing = DailyReturns(pricing.loc[[dates[dates.get_loc(date)]]])
         row_returns, row_has_price = pricing.row(date)
         assets = self._weights.index
         weights = self._weights.to_numpy(dtype=float)

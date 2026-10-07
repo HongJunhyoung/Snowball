@@ -27,15 +27,15 @@ def calc_stats(returns, trades=None):
 
     stats = dict()
 
-    t0 = last_day.replace(day=1) - pd.Timedelta(days=1)  # end of previous month
+    t0 = last_day.replace(day=1) - pd.Timedelta(1, unit='D')  # end of previous month
     stats['MTD'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
-    t0 = last_day.replace(month=1, day=1) - pd.Timedelta(days=1)  # end of previous year
+    t0 = last_day.replace(month=1, day=1) - pd.Timedelta(1, unit='D')  # end of previous year
     stats['YTD'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
     years = [1, 5, 10]
     for n in years:
-        t0 = last_day - pd.Timedelta(days=(365 * n + 1))  # n years ago
+        t0 = last_day - pd.Timedelta(365 * n + 1, unit='D')  # n years ago
         stats[f'{n}Y'] = nav.iloc[-1] / nav[:t0].iloc[-1] - 1 if not nav[:t0].empty else np.nan
 
     stats['Total Return'] = nav.iloc[-1] - 1

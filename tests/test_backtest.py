@@ -1,8 +1,11 @@
+import numpy as np
 import pandas as pd
 import pytest
 import os
+import types
 import snowball as sb
 from snowball.components import BacktestLogger, DailyReturns, Fund
+from snowball.rules import ledoit_wolf
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(TEST_DIR, 'data', 'etfs_prices.csv')
@@ -127,3 +130,62 @@ def test_portfolio_records_are_snapshots_and_buffer_is_released(sample_prices):
     assert portfolio.trades.loc[date].to_dict() == {'A': 0.6, 'B': 0.4}
     assert portfolio.gross_returns.loc[date] == 0.01
     assert portfolio._records is None
+
+
+def _synthetic_universe():
+    rs = np.random.RandomState(0)
+    vols = np.array([0.005, 0.01, 0.015, 0.02, 0.008])
+    cov = np.outer(vols, vols) * (0.3 + 0.7 * np.eye(5))
+    rets = rs.standard_normal((400, 5)) @ np.linalg.cholesky(cov).T
+    prices = pd.DataFrame(100 * np.cumprod(1 + rets, axis=0), columns=list('ABCDE'),
+                          index=pd.bdate_range('2020-01-01', periods=400))
+    pricing = prices.stack().rename('price').to_frame()
+    pricing.index.names = ['date', 'asset']
+    return types.SimpleNamespace(pricing=pricing)
+
+
+def test_ledoit_wolf_matches_sklearn_formula():
+    X = np.random.RandomState(1).standard_normal((60, 5)) * 0.01
+    Xc = X - X.mean(axis=0)
+    emp_cov = Xc.T @ Xc / len(X)
+    mu = np.trace(emp_cov) / 5
+    shrunk = ledoit_wolf(X)
+    # Shrunk covariance is a convex combination of the sample covariance and mu * I
+    off_diag = ~np.eye(5, dtype=bool)
+    shrinkage = 1 - shrunk[off_diag][0] / emp_cov[off_diag][0]
+    expected = (1 - shrinkage) * emp_cov + shrinkage * mu * np.eye(5)
+    np.testing.assert_allclose(shrunk, expected, rtol=1e-12)
+    assert 0 < shrinkage < 1
+
+
+# Reference weights computed with PyPortfolioOpt 1.5.6
+# (CovarianceShrinkage.ledoit_wolf + EfficientFrontier.min_volatility)
+@pytest.mark.parametrize('window, expected', [
+    (60, [0.5503139367848389, 0.163794479235014, 0.0262203183695346, 0.0, 0.2596712656106126]),
+    (252, [0.6895650322841379, 0.1240458831317242, 0.0002475503942849, 0.0, 0.186141534189853]),
+])
+def test_minimum_variance_matches_pypfopt(window, expected):
+    universe = _synthetic_universe()
+    date = universe.pricing.index.get_level_values('date').max()
+    weights = sb.MinimumVariance(list('ABCDE'), window=window).calculate(
+        date, universe, None)
+    assert list(weights.index) == list('ABCDE')
+    assert weights.sum() == pytest.approx(1, abs=1e-12)
+    assert (weights >= 0).all()
+    np.testing.assert_allclose(weights.values, expected, atol=1e-6)
+
+
+@pytest.mark.parametrize('rule', [
+    sb.MinimumVariance(list('ABCDE'), window=60),
+    sb.TopNbyMomentum(list('ABCDE'), top_n=2, period=60),
+])
+def test_rules_ignore_prices_after_date(rule):
+    universe = _synthetic_universe()
+    dates = universe.pricing.index.get_level_values('date').unique()
+    date = dates[-50]
+    blinded = types.SimpleNamespace(pricing=universe.pricing.loc[:date])
+
+    expected = rule.calculate(date, blinded, None)
+    actual = rule.calculate(date, universe, None)
+
+    pd.testing.assert_series_equal(actual, expected)

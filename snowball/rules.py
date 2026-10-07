@@ -3,10 +3,6 @@ import pandas as pd
 from scipy.optimize import minimize
 from .components import Rule
 
-from pypfopt.expected_returns import mean_historical_return
-from pypfopt.risk_models import CovarianceShrinkage
-from pypfopt.efficient_frontier import EfficientFrontier
-
 
 def risk_budgeting(covmat, budget):
     def objective(w, cov, rb) :
@@ -31,6 +27,47 @@ def risk_budgeting(covmat, budget):
                     constraints=constraints,
                     options=options)
     return(result.x)
+
+
+def ledoit_wolf(returns):
+    '''Ledoit-Wolf shrinkage toward a constant-variance target (sklearn-compatible).'''
+    X = np.nan_to_num(np.asarray(returns, dtype=float))
+    n, p = X.shape
+    X = X - X.mean(axis=0)
+    emp_cov = X.T @ X / n
+    if p == 1:
+        return emp_cov
+
+    X2 = X ** 2
+    emp_cov_trace = X2.sum(axis=0) / n
+    mu = emp_cov_trace.sum() / p
+    beta_ = np.sum(X2.T @ X2)
+    delta_ = np.sum(emp_cov ** 2)
+    beta = (beta_ / n - delta_) / (p * n)
+    delta = (delta_ - 2 * mu * emp_cov_trace.sum() + p * mu ** 2) / p
+    beta = min(beta, delta)
+    shrinkage = 0 if beta == 0 else beta / delta
+
+    shrunk_cov = (1 - shrinkage) * emp_cov
+    shrunk_cov.flat[::p + 1] += shrinkage * mu
+    return shrunk_cov
+
+
+def min_variance(covmat):
+    '''Long-only, fully invested minimum variance weights.'''
+    cnt = covmat.shape[0]
+    w0 = np.full(cnt, 1 / cnt)
+    constraints = ({'type': 'eq', 'fun': lambda x: x.sum() - 1},)
+    options = {'ftol': 1e-15, 'maxiter': 10000}
+    result = minimize(fun=lambda w: w @ covmat @ w,
+                      x0=w0,
+                      jac=lambda w: 2 * covmat @ w,
+                      method='SLSQP',
+                      bounds=[(0, 1)] * cnt,
+                      constraints=constraints,
+                      options=options)
+    weights = np.clip(result.x, 0, 1)
+    return weights / weights.sum()
 
 
 class Pipeline(Rule):
@@ -96,7 +133,7 @@ class TopNbyMomentum(Rule):
         self.assets = assets
 
     def calculate(self, date, universe, fund):
-        prices = universe.pricing['price'].unstack()[self.assets]
+        prices = universe.pricing['price'].unstack()[self.assets].loc[:date]
         momentums = prices.iloc[-1] / prices.iloc[-self.period] - 1
         selected = momentums.sort_values(ascending=False).iloc[:self.top_n].index
         weight = 1 / len(selected)
@@ -113,10 +150,10 @@ class MinimumVariance(Rule):
         self.assets = assets
 
     def calculate(self, date, universe, fund):
-        prices = universe.pricing['price'].unstack()[self.assets].iloc[-self.window:]
-        mu = mean_historical_return(prices)
-        S = CovarianceShrinkage(prices).ledoit_wolf()
-        ef = EfficientFrontier(mu, S)
-        weights = ef.min_volatility()
+        prices = universe.pricing['price'].unstack()[self.assets]
+        prices = prices.loc[:date].iloc[-self.window:]
+        returns = prices.pct_change(fill_method=None).dropna(how='all')
+        covmat = ledoit_wolf(returns) * 252
+        weights = min_variance(covmat)
         weights = pd.Series(weights, index=self.assets)
         return weights

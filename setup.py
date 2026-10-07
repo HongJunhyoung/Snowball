@@ -27,8 +27,7 @@ setup(
         'scipy>=1.7.3',
         'tqdm>=4.45.0',
         'plotly>=5.1.0',
-        'kaleido>=0.2.1',
-        'Ipython'
+        'ipython'
     ],
     classifiers=[
         "Operating System :: OS Independent",

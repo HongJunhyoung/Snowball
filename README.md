@@ -102,6 +102,7 @@ bt = sb.run_backtest(prices=price_data,
 - run_backtest()가 반환한 오브젝트의 report() 함수를 이용하여 결과를 확인합니다.
 - jupyter lab에서 챠트 표시가 정상적으로 되지 않는 경우 [plotly extension](https://www.npmjs.com/package/@jupyterlab/plotly-extension)을 설치하여 주십시오.
 - 챠트 때문에 노트북 렌더링이 느려지는 경우에는 charts='static' 또는 charts=None 옵션을 사용하시기 바랍니다.
+- charts='static'은 챠트를 PNG 이미지로 출력하며, kaleido 패키지가 필요합니다(`pip install kaleido`).
 ```py
 bt.report()
 ```

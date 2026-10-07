@@ -147,8 +147,8 @@ def report_perf(returns, gross_returns=None, trades=None, weights=None, benchmar
             iplot(fig1)
             iplot(fig2)
         elif charts == 'static':
-            display(Image(fig1.to_image(format='png', engine='kaleido', width=850, height=800)))
-            display(Image(fig2.to_image(format='png', engine='kaleido', width=850, height=400)))
+            display(Image(fig1.to_image(format='png', width=850, height=800)))
+            display(Image(fig2.to_image(format='png', width=850, height=400)))
         else:
             raise ValueError('Charts should be interactive or static.')
 

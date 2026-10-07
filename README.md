@@ -7,6 +7,9 @@
 ```sh
 pip install snowball
 ```
+- Python 3.10 이상, pandas 1.3.5 ~ 3.x를 지원합니다.
+- pandas 1.x는 numpy 2와 호환되지 않으므로 함께 사용할 때는 `pip install snowball "pandas<2" "numpy<2"`로 설치하세요.
+
 &nbsp;
 ## 실행 예시
 *아래 예제를 실행하기 전에 [FianceDataReader 패키지](https://github.com/FinanceData/FinanceDataReader)를 우선 설치해 주세요.*  

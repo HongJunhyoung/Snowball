@@ -1,3 +1,2 @@
-include README.md LICENSE
-include versioneer.py
-include snowball/_version.py
+prune docs
+prune img

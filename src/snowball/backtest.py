@@ -1,6 +1,5 @@
-import pandas as pd
-from .components import Universe, Rule, Portfolio
-from .rules import EqualWeight, RiskParity, ConstantWeight
+from .components import Portfolio, Rule, Universe
+from .rules import ConstantWeight, EqualWeight, RiskParity
 
 
 def run_backtest(prices, schedule, rule, cost=0, start='1900-01-01', end='2099-12-31', verbose=True):

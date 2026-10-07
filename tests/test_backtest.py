@@ -1,8 +1,10 @@
+import os
+import types
+
 import numpy as np
 import pandas as pd
 import pytest
-import os
-import types
+
 import snowball as sb
 from snowball.components import BacktestLogger, DailyReturns, Fund
 from snowball.rules import ledoit_wolf

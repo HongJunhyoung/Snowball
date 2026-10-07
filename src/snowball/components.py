@@ -1,9 +1,12 @@
+import math
 from abc import ABCMeta, abstractmethod
+
 import numpy as np
 import pandas as pd
-import math
 from tqdm.auto import tqdm
+
 from .report import calc_stats, report_log, report_perf
+
 
 class Universe(object):
     def __init__(self, name, prices=None):

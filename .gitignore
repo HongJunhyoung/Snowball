@@ -8,3 +8,5 @@ dist
 .DS_store
 .vscode
 *pyc
+.tox
+.pytest_cache

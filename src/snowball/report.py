@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
-from plotly.offline import iplot
 import plotly.graph_objs as go
 import plotly.io as pio
-from IPython.display import display, Markdown, HTML, Image
+from IPython.display import HTML, Image, Markdown, display
+from plotly.offline import iplot
 
 pio.templates.default='none' # plotly style
 

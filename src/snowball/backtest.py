@@ -2,8 +2,10 @@ from .components import Portfolio, Rule, Universe
 from .rules import ConstantWeight, EqualWeight, RiskParity
 
 
-def run_backtest(prices, schedule, rule, cost=0, start='1900-01-01', end='2099-12-31', verbose=True):
-    '''
+def run_backtest(
+    prices, schedule, rule, cost=0, start='1900-01-01', end='2099-12-31', verbose=True
+):
+    """
     Run backtest.
 
     Parameters
@@ -20,7 +22,7 @@ def run_backtest(prices, schedule, rule, cost=0, start='1900-01-01', end='2099-1
     -------
     portfolio : Portfolio object
         Contains the universe data, backtest policies and the backtest result.
-    '''
+    """
 
     universe = Universe('Universe', prices)
 

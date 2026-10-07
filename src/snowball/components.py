@@ -12,7 +12,7 @@ class Universe(object):
     def __init__(self, name, prices=None):
         self.name = name
         if prices is not None:
-            _prices = prices.copy() 
+            _prices = prices.copy()
             _prices.index = pd.to_datetime(_prices.index)
             pr = _prices.stack().rename('price')
             dr = _prices.pct_change().stack().rename('return')
@@ -32,29 +32,44 @@ class Universe(object):
         if self._pricing is None:
             return None
         else:
-            return self._pricing.loc[:self.blind_after]
+            return self._pricing.loc[: self.blind_after]
 
     @property
     def calendar(self):
         if self._calendar is None:
             return None
         else:
-            return self._calendar.loc[:self.blind_after]
+            return self._calendar.loc[: self.blind_after]
 
     def _build_calendar(self, pricing):
         bd = pricing.index.get_level_values(0).unique().sort_values()
         start, end = bd[0], bd[-1]
         bsd = bd.to_frame(name='TD')
-        bsd['ND'] = bsd.shift(-1) # next business day
-        bsd.loc[end, 'ND'] = bsd.loc[end, 'TD'] + pd.Timedelta(days=1) # fill NaN with next day
+        bsd['ND'] = bsd.shift(-1)  # next business day
+        bsd.loc[end, 'ND'] = bsd.loc[end, 'TD'] + pd.Timedelta(days=1)  # fill NaN with next day
         bsd['EOD'] = True
         bsd['EOM'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month else False, axis=1)
-        bsd['EOQ'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month in (3, 6, 9, 12) else False, axis=1)
-        bsd['EOH'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month in (6, 12) else False, axis=1)
-        bsd['EOY'] = bsd.apply(lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month == 12 else False, axis=1)
-        cal = pd.date_range(start, end).to_frame(name='CD') # build calendar 
+        bsd['EOQ'] = bsd.apply(
+            lambda r: (
+                True if r['TD'].month != r['ND'].month and r['TD'].month in (3, 6, 9, 12) else False
+            ),
+            axis=1,
+        )
+        bsd['EOH'] = bsd.apply(
+            lambda r: (
+                True if r['TD'].month != r['ND'].month and r['TD'].month in (6, 12) else False
+            ),
+            axis=1,
+        )
+        bsd['EOY'] = bsd.apply(
+            lambda r: True if r['TD'].month != r['ND'].month and r['TD'].month == 12 else False,
+            axis=1,
+        )
+        cal = pd.date_range(start, end).to_frame(name='CD')  # build calendar
         cal = pd.concat([cal, bsd], axis=1)
-        cal = cal[['EOD', 'EOM', 'EOQ', 'EOH', 'EOY']].astype('boolean').fillna(False)   # fill holidays with False
+        cal = (
+            cal[['EOD', 'EOM', 'EOQ', 'EOH', 'EOY']].astype('boolean').fillna(False)
+        )  # fill holidays with False
         return cal
 
     def add_pricing(self, data):
@@ -82,12 +97,16 @@ class Scheduler(object):
             self._rule = rule_or_list
             stdday = self._rule[:3]
             offset = 0 if len(self._rule) == 3 else int(self._rule[3:])
-            self._rebalance_dates = self._business_days[self._business_days.shift(offset)[stdday] == 1].index
+            self._rebalance_dates = self._business_days[
+                self._business_days.shift(offset)[stdday] == 1
+            ].index
         else:
             raise ValueError('Input must be a keyword or a list of date')
 
     def __repr__(self):
-        return f'<Scheduler>\nRebalance Rule: {self._rule}\nRebalance Dates: {self._rebalance_dates}'
+        return (
+            f'<Scheduler>\nRebalance Rule: {self._rule}\nRebalance Dates: {self._rebalance_dates}'
+        )
 
     @property
     def rebalance_dates(self):
@@ -97,9 +116,9 @@ class Scheduler(object):
         return self._business_days.loc[start:end].index
 
     def is_rebalance_date(self, date, *args, **kwargs):
-        if self.rebalance_dates is not None:   # periodic rebalancing
+        if self.rebalance_dates is not None:  # periodic rebalancing
             return date in self._rebalance_dates
-        else:                                  # threshold rebalancing
+        else:  # threshold rebalancing
             # not implemented
             return False
 
@@ -111,10 +130,13 @@ class DailyReturns(object):
     A missing row means the asset is not tradable (cash out); a row with a NaN return
     is kept and later treated as a zero return.
     """
+
     def __init__(self, pricing):
         returns = pricing['return'].unstack()
         has_price = pd.Series(True, index=pricing.index).unstack(fill_value=False)
-        has_price = has_price.reindex(index=returns.index, columns=returns.columns, fill_value=False)
+        has_price = has_price.reindex(
+            index=returns.index, columns=returns.columns, fill_value=False
+        )
         self._returns = returns.to_numpy(dtype=float)
         self._has_price = has_price.to_numpy(dtype=bool)
         self._dates = returns.index
@@ -184,8 +206,10 @@ class Fund(object):
             kept.append(k)
             kept_returns.append(_asset_return)
             _portfolio_return += weights[k] * _asset_return
-        self._nav *= (1 + _portfolio_return)
-        new_weights = weights[kept] * (1 + np.asarray(kept_returns, dtype=float)) / (1 + _portfolio_return)
+        self._nav *= 1 + _portfolio_return
+        new_weights = (
+            weights[kept] * (1 + np.asarray(kept_returns, dtype=float)) / (1 + _portfolio_return)
+        )
         index = assets[kept]
         if index.name != 'asset':
             index = index.rename(None)
@@ -260,7 +284,9 @@ class Portfolio(object):
 
     def _finalize_records(self):
         rec = self._records
-        new = pd.Series(rec['returns'], index=pd.DatetimeIndex(rec['dates']), dtype=float, name='return')
+        new = pd.Series(
+            rec['returns'], index=pd.DatetimeIndex(rec['dates']), dtype=float, name='return'
+        )
         old = self.gross_returns
         if len(old) == 0:
             self.gross_returns = new
@@ -268,7 +294,9 @@ class Portfolio(object):
             updated = old.copy()
             common = new.index.intersection(old.index)
             updated.loc[common] = new.loc[common]
-            self.gross_returns = pd.concat([updated, new[~new.index.isin(old.index)]]).rename('return')
+            self.gross_returns = pd.concat([updated, new[~new.index.isin(old.index)]]).rename(
+                'return'
+            )
         self.weights = self._stack_records(rec['weights'], 'weight')
         self.trades = self._stack_records(rec['trades'], 'trade')
         self._records = None
@@ -278,9 +306,11 @@ class Portfolio(object):
         if self.trades is None:
             self.returns = self.gross_returns.copy()
         else:
-            turnover = self.trades.abs().groupby(self.trades.index.get_level_values(0)).sum().astype(float)
+            turnover = (
+                self.trades.abs().groupby(self.trades.index.get_level_values(0)).sum().astype(float)
+            )
             self.returns = self.gross_returns.sub(turnover * self.cost, fill_value=0)
-            self.stats = None # initialize for re-adjustment
+            self.stats = None  # initialize for re-adjustment
 
     def _evaluate(self):
         self.stats = calc_stats(self.returns, self.trades)
@@ -294,8 +324,15 @@ class Portfolio(object):
         else:
             raise ValueError('Not defined')
 
-    def report(self, start='1900-01-01', end='2099-01-01', benchmark=None, relative=False, charts='interactive'):
-        '''
+    def report(
+        self,
+        start='1900-01-01',
+        end='2099-01-01',
+        benchmark=None,
+        relative=False,
+        charts='interactive',
+    ):
+        """
         Report performance metrics and charts.
 
         Parameters
@@ -306,7 +343,7 @@ class Portfolio(object):
             daily index value or price, not daily return
         relative : boolean
             If True, excess returns will be analyzed.
-        '''
+        """
         rtns = self.returns
         g_rtns = self.gross_returns
         wgts = self.weights
@@ -316,7 +353,7 @@ class Portfolio(object):
             bm = bm.reindex(rtns.index).fillna(0)
             t0 = rtns.index[0]
             if rtns.loc[t0] == 0:
-                bm.loc[t0] = 0 # To be aligned with portfolio return
+                bm.loc[t0] = 0  # To be aligned with portfolio return
             if relative:
                 rtns = rtns - bm
         else:
@@ -331,7 +368,7 @@ class Portfolio(object):
         self.weights = None
         self.trades = None
         self.stats = None
-        self.universe.set_blind_after(None) 
+        self.universe.set_blind_after(None)
         self._logger.initialize()
         self._records = {'dates': [], 'returns': [], 'weights': [], 'trades': []}
         daily_returns = DailyReturns(self.universe._pricing)
@@ -339,11 +376,14 @@ class Portfolio(object):
         fund = Fund()
         fund.rebalance(initial_weights)
 
-        bar_format='{percentage:3.0f}% {bar} ({desc}) {n_fmt}/{total_fmt} | \
+        bar_format = '{percentage:3.0f}% {bar} ({desc}) {n_fmt}/{total_fmt} | \
                     Elapsed {elapsed} | Remaining {remaining} | {rate_inv_fmt}'
-        business_days_iterator = tqdm(self.scheduler.business_days(start, end),
-                                      bar_format=bar_format,
-                                      desc='DATE', disable=(not verbose))
+        business_days_iterator = tqdm(
+            self.scheduler.business_days(start, end),
+            bar_format=bar_format,
+            desc='DATE',
+            disable=(not verbose),
+        )
         for td in business_days_iterator:
             business_days_iterator.desc = td.strftime('%Y-%m-%d')
 
@@ -351,7 +391,7 @@ class Portfolio(object):
 
             # Rebalance
             if self.scheduler.is_rebalance_date(td):
-                self.universe.set_blind_after(td) # prevent look-ahead bias 방지
+                self.universe.set_blind_after(td)  # prevent look-ahead bias 방지
                 weights = self.rule.calculate(td, self.universe, fund)
                 trades = fund.rebalance(weights)
                 if trades is not None:
